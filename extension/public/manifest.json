@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Edson ServiceNow AI Ticket Assistant",
+  "description": "AI-assisted ServiceNow ticket field drafting for Edson Info Systems.",
+  "version": "0.1.0",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://10.218.68.140:8000/*",
+    "https://*.service-now.com/*",
+    "https://*.servicenow.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "AI Bot.png",
+        "AI%20Bot.png"
+      ],
+      "matches": [
+        "https://*.service-now.com/*",
+        "https://*.servicenow.com/*"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.service-now.com/*",
+        "https://*.servicenow.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

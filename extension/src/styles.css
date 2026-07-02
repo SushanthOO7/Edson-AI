@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .edson-ai-panel {
+    @apply fixed z-[2147483647] w-[520px] max-w-[calc(100vw-1rem)] border border-white/80 bg-white text-slate-950 shadow-edson-panel;
+    border-radius: 28px;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  .edson-ai-hero {
+    @apply relative select-none border-b border-slate-200 px-5 pb-5 pt-4 text-center;
+    background: #f8fafc;
+  }
+
+  .edson-ai-hero-top {
+    @apply flex items-center justify-between;
+  }
+
+  .edson-ai-hero-actions {
+    @apply flex items-center gap-2;
+  }
+
+  .edson-ai-brand {
+    @apply rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm;
+  }
+
+  .edson-ai-ticket-chip {
+    @apply rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 shadow-sm;
+  }
+
+  .edson-ai-panel-toggle {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-950;
+  }
+
+  .edson-ai-collapsed-button {
+    @apply fixed z-[2147483647] flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-white text-slate-950 shadow-edson-panel transition hover:scale-105;
+    box-shadow: 0 14px 30px rgba(79, 70, 229, 0.2), 0 0 0 6px rgba(139, 92, 246, 0.12);
+  }
+
+  .edson-ai-collapsed-image {
+    @apply h-full w-full;
+    object-fit: cover;
+    object-position: center center;
+    transform: scale(1.18);
+  }
+
+  .edson-ai-bot-stage {
+    @apply relative mx-auto mt-3 flex h-[150px] w-[160px] items-center justify-center;
+  }
+
+  .edson-ai-bot-ring {
+    @apply relative flex h-[128px] w-[128px] items-center justify-center overflow-hidden rounded-full border-4 border-white bg-white shadow-lg;
+    box-shadow: 0 0 0 7px rgba(139, 92, 246, 0.12), 0 18px 34px rgba(79, 70, 229, 0.16);
+  }
+
+  .edson-ai-orbit {
+    @apply absolute h-[150px] w-[150px] rounded-full border border-violet-100;
+  }
+
+  .edson-ai-bot-image {
+    @apply h-full w-full;
+    object-fit: cover;
+    object-position: center center;
+    transform: scale(1.08);
+  }
+
+  .edson-ai-title {
+    @apply mt-2 text-2xl font-bold text-slate-900;
+    letter-spacing: 0;
+  }
+
+  .edson-ai-subtitle {
+    @apply mx-auto mt-1 max-w-[390px] text-xs font-semibold leading-5 text-slate-500;
+    letter-spacing: 0;
+  }
+
+  .edson-ai-action-area {
+    @apply bg-white px-4 py-4;
+  }
+
+  .edson-ai-action-grid {
+    @apply flex flex-wrap items-center justify-center gap-3;
+  }
+
+  .edson-ai-action-tile {
+    appearance: none !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 170px !important;
+    height: 60px !important;
+    min-width: 170px !important;
+    padding: 0 18px !important;
+    background: #ffffff !important;
+    border: none !important;
+    border-radius: 9999px !important;
+    color: #000000 !important;
+    outline: none !important;
+    text-align: center !important;
+    box-shadow: none !important;
+    transition: all 0.4s !important;
+    user-select: none;
+  }
+
+  .edson-ai-action-tile:not(:disabled) {
+    cursor: pointer !important;
+  }
+
+  .edson-ai-action-tile:not(:disabled):hover {
+    background: #073b4c !important;
+    color: #ffffff !important;
+    box-shadow:
+      inset 0 0 0 4px #ef476f,
+      inset 0 0 0 8px #ffd166,
+      inset 0 0 0 12px #06d6a0,
+      inset 0 0 0 16px #118ab2 !important;
+  }
+
+  .edson-ai-action-tile:not(:disabled):active {
+    transform: translateY(1px) !important;
+  }
+
+  .edson-ai-action-icon {
+    @apply flex h-9 w-9 flex-none items-center justify-center rounded-full transition-colors duration-300;
+  }
+
+  .edson-ai-action-label {
+    @apply flex min-w-0 items-center text-[13px] font-bold leading-[15px] transition-colors duration-300;
+    letter-spacing: 0 !important;
+  }
+
+  .edson-ai-action-blue .edson-ai-action-icon {
+    @apply bg-blue-50 text-blue-600;
+  }
+
+  .edson-ai-action-purple .edson-ai-action-icon {
+    @apply bg-violet-50 text-violet-600;
+  }
+
+  .edson-ai-action-mint .edson-ai-action-icon {
+    @apply bg-emerald-50 text-emerald-600;
+  }
+
+  .edson-ai-action-orange .edson-ai-action-icon {
+    @apply bg-orange-50 text-orange-500;
+  }
+
+  .edson-ai-action-primary {
+    width: 170px !important;
+  }
+
+  .edson-ai-action-primary .edson-ai-action-icon {
+    @apply bg-violet-50 text-violet-600;
+  }
+
+  .edson-ai-action-primary .edson-ai-action-label {
+    @apply text-[13px];
+  }
+
+  .edson-ai-action-tile:not(:disabled):hover .edson-ai-action-icon {
+    @apply bg-transparent text-white;
+  }
+
+  .edson-ai-action-tile:not(:disabled):hover .edson-ai-action-label {
+    @apply text-white;
+  }
+
+  .edson-ai-button {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .edson-ai-button-primary {
+    @apply border-blue-700 bg-blue-700 text-white hover:bg-blue-800;
+  }
+
+  .edson-ai-icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .edson-ai-input {
+    @apply h-9 min-w-0 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-blue-700 focus:ring-2 focus:ring-blue-100;
+  }
+
+  .edson-ai-status {
+    @apply inline-flex items-center rounded px-2 py-1 text-xs font-medium;
+  }
+
+  .edson-ai-inline-mount {
+    @apply my-2;
+  }
+}
