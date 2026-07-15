@@ -43,7 +43,7 @@ class ResponseValidator:
 
         content = raw
         if isinstance(raw, dict):
-            for key in ("response", "answer", "result", "content", "output", "data"):
+            for key in ("response", "answer", "result", "content", "output_text", "data"):
                 if key in raw:
                     content = raw[key]
                     break
@@ -51,8 +51,17 @@ class ResponseValidator:
                 choices = raw.get("choices")
                 if isinstance(choices, list) and choices:
                     content = choices[0].get("message", {}).get("content")
+                else:
+                    output = raw.get("output")
+                    if isinstance(output, list) and output:
+                        content = cls._extract_output_content(output)
 
         if isinstance(content, dict):
+            if not (cls.GENERATE_KEYS <= set(content) or cls.REVISE_KEYS <= set(content)):
+                for key in ("response", "answer", "result", "content", "output_text", "data"):
+                    nested = content.get(key)
+                    if nested is not None and nested is not content:
+                        return cls._extract_json_payload(nested)
             return content
         if not isinstance(content, str):
             raise AIResponseValidationError("AI response did not contain JSON content.")
@@ -66,6 +75,24 @@ class ResponseValidator:
         if not isinstance(parsed, dict):
             raise AIResponseValidationError("AI response JSON must be an object.")
         return parsed
+
+    @classmethod
+    def _extract_output_content(cls, output: list[Any]) -> Any:
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                for content_item in content:
+                    if not isinstance(content_item, dict):
+                        continue
+                    if "text" in content_item:
+                        return content_item["text"]
+                    if "json" in content_item:
+                        return content_item["json"]
+            if "text" in item:
+                return item["text"]
+        return output
 
     @staticmethod
     def _strip_code_fences(value: str) -> str:

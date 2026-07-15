@@ -16,6 +16,17 @@ type ExtensionApiResponse<TResponse> =
       error: string;
     };
 
+function generationBody(ticketContext: TicketContext, userInstruction?: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    ticket_context: ticketContext
+  };
+  const cleanedInstruction = userInstruction?.trim();
+  if (cleanedInstruction) {
+    body.user_instruction = cleanedInstruction;
+  }
+  return body;
+}
+
 async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
   if (!canUseExtensionRuntime()) {
     throw new Error("The extension background worker is not available.");
@@ -44,48 +55,38 @@ function canUseExtensionRuntime(): boolean {
   );
 }
 
-export function generateFields(ticketContext: TicketContext): Promise<GeneratedFieldsResponse> {
-  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-fields", {
-    ticket_context: ticketContext,
-    user_instruction: "Generate all fields."
-  });
+export function generateFields(ticketContext: TicketContext, userInstruction?: string): Promise<GeneratedFieldsResponse> {
+  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-fields", generationBody(ticketContext, userInstruction));
 }
 
-export function generateShortDescription(ticketContext: TicketContext): Promise<GeneratedFieldsResponse> {
-  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-short-description", {
-    ticket_context: ticketContext
-  });
+export function generateShortDescription(ticketContext: TicketContext, userInstruction?: string): Promise<GeneratedFieldsResponse> {
+  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-short-description", generationBody(ticketContext, userInstruction));
 }
 
-export function generateDescription(ticketContext: TicketContext): Promise<GeneratedFieldsResponse> {
-  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-description", {
-    ticket_context: ticketContext
-  });
+export function generateDescription(ticketContext: TicketContext, userInstruction?: string): Promise<GeneratedFieldsResponse> {
+  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-description", generationBody(ticketContext, userInstruction));
 }
 
-export function generateAdditionalComments(ticketContext: TicketContext): Promise<GeneratedFieldsResponse> {
-  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-additional-comments", {
-    ticket_context: ticketContext
-  });
+export function generateAdditionalComments(ticketContext: TicketContext, userInstruction?: string): Promise<GeneratedFieldsResponse> {
+  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-additional-comments", generationBody(ticketContext, userInstruction));
 }
 
-export function generateWorkNotes(ticketContext: TicketContext): Promise<GeneratedFieldsResponse> {
-  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-work-notes", {
-    ticket_context: ticketContext
-  });
+export function generateWorkNotes(ticketContext: TicketContext, userInstruction?: string): Promise<GeneratedFieldsResponse> {
+  return postJson<GeneratedFieldsResponse>("/api/servicenow/generate-work-notes", generationBody(ticketContext, userInstruction));
 }
 
 export function generateField(
   ticketContext: TicketContext,
-  fieldName: SupportedFieldName
+  fieldName: SupportedFieldName,
+  userInstruction?: string
 ): Promise<GeneratedFieldsResponse> {
-  const generators: Record<SupportedFieldName, (context: TicketContext) => Promise<GeneratedFieldsResponse>> = {
+  const generators: Record<SupportedFieldName, (context: TicketContext, instruction?: string) => Promise<GeneratedFieldsResponse>> = {
     short_description: generateShortDescription,
     description: generateDescription,
     additional_comments: generateAdditionalComments,
     work_notes: generateWorkNotes
   };
-  return generators[fieldName](ticketContext);
+  return generators[fieldName](ticketContext, userInstruction);
 }
 
 export function reviseField(args: {

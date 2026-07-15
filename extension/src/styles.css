@@ -85,6 +85,23 @@
     @apply flex flex-wrap items-center justify-center gap-3;
   }
 
+  .edson-ai-guidance-panel {
+    @apply mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3;
+  }
+
+  .edson-ai-guidance-header {
+    @apply mb-2 flex items-center justify-between gap-2 text-xs font-bold text-slate-700;
+    letter-spacing: 0 !important;
+  }
+
+  .edson-ai-guidance-clear {
+    @apply inline-flex h-7 w-7 flex-none items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .edson-ai-guidance-input {
+    @apply block min-h-[82px] w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 text-sm leading-5 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-blue-700 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+  }
+
   .edson-ai-action-tile {
     appearance: none !important;
     display: inline-flex !important;

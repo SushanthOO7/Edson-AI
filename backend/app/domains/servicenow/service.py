@@ -6,7 +6,12 @@ from app.ai.createai_provider import CreateAIProvider, CreateAIProviderError
 from app.ai.prompt_engine import PromptEngine
 from app.ai.response_validator import AIResponseValidationError, ResponseValidator
 from app.ai.safety_rules import SafetyRules
-from app.domains.servicenow.prompts import GENERATE_FIELDS_SYSTEM_PROMPT, REVISE_FIELD_SYSTEM_PROMPT
+from app.domains.servicenow.prompts import (
+    GENERATE_FIELDS_RESPONSE_SCHEMA,
+    GENERATE_FIELDS_SYSTEM_PROMPT,
+    REVISE_FIELD_RESPONSE_SCHEMA,
+    REVISE_FIELD_SYSTEM_PROMPT,
+)
 from app.domains.servicenow.schemas import (
     FieldStatusRequest,
     FieldStatusResponse,
@@ -15,9 +20,11 @@ from app.domains.servicenow.schemas import (
     ReviseFieldRequest,
     RevisedFieldResponse,
 )
+from app.domains.servicenow.ticket_context import TicketContextBuilder
 from app.db.repositories import SupportRepository, log_repository_error
 from app.memory.example_memory import ExampleMemory
 from app.memory.session_memory import SessionMemory
+from app.memory.ticket_ai_state import TicketAIStateStore
 from app.memory.user_memory import UserMemory, UserProfile
 
 
@@ -29,24 +36,30 @@ class ServiceNowAssistantService:
         user_memory: UserMemory,
         session_memory: SessionMemory,
         example_memory: ExampleMemory,
+        ticket_ai_state_store: TicketAIStateStore | None = None,
         repository: SupportRepository | None = None,
     ) -> None:
         self.createai_provider = createai_provider
         self.user_memory = user_memory
         self.session_memory = session_memory
         self.example_memory = example_memory
+        self.ticket_ai_state_store = ticket_ai_state_store or TicketAIStateStore()
         self.repository = repository
 
     async def generate_fields(self, request: GenerateFieldsRequest) -> GeneratedFieldsResponse:
         current_user = self.user_memory.get_current_user()
         team_rules = self.user_memory.get_team_rules()
-        ticket_context = self._build_prompt_ticket_context(request.ticket_context.compact_dict())
+        normalized_context = TicketContextBuilder.normalize(request.ticket_context)
+        current_field_values = TicketContextBuilder.current_field_values(request.ticket_context)
+        ticket_state = self.ticket_ai_state_store.get(request.ticket_context.number)
         prompt = PromptEngine.build_generate_fields_query(
-            ticket_context=ticket_context,
+            ticket_context=normalized_context,
             target_fields=request.target_fields,
             user_instruction=request.user_instruction,
             current_user=current_user,
             team_rules=team_rules,
+            current_field_values=current_field_values,
+            recent_ai_outputs=ticket_state.generated_fields if ticket_state else {},
         )
 
         if self.createai_provider.is_mock:
@@ -56,6 +69,9 @@ class ServiceNowAssistantService:
                 raw_response = await self.createai_provider.query(
                     system_prompt=GENERATE_FIELDS_SYSTEM_PROMPT,
                     query=prompt,
+                    session_id=self._build_createai_session_id(request.ticket_context.number),
+                    response_schema=GENERATE_FIELDS_RESPONSE_SCHEMA,
+                    response_schema_name="servicenow_generate_fields",
                 )
                 payload = ResponseValidator.parse_generate_response(raw_response)
             except (CreateAIProviderError, AIResponseValidationError) as exc:
@@ -64,20 +80,38 @@ class ServiceNowAssistantService:
         response = GeneratedFieldsResponse.model_validate(payload)
         safe_response = self._apply_generate_safety(request, response)
         repaired_response = await self._repair_generate_response(request, safe_response, current_user, team_rules)
-        return self._filter_generate_response_to_targets(request, repaired_response)
+        filtered_response = self._filter_generate_response_to_targets(request, repaired_response)
+        self.ticket_ai_state_store.record_generation(
+            ticket_number=request.ticket_context.number,
+            normalized_ticket_context=normalized_context,
+            generated_fields={
+                "short_description": filtered_response.short_description,
+                "description": filtered_response.description,
+                "additional_comments": filtered_response.additional_comments,
+                "work_notes": filtered_response.work_notes,
+            },
+            action="generate_single_field" if request.target_fields and len(request.target_fields) == 1 else "generate_all_fields",
+            field_name=request.target_fields[0] if request.target_fields and len(request.target_fields) == 1 else None,
+            response_id=self._extract_response_id(raw_response) if "raw_response" in locals() else None,
+        )
+        return filtered_response
 
     async def revise_field(self, request: ReviseFieldRequest) -> RevisedFieldResponse:
         current_user = self.user_memory.get_current_user()
         team_rules = self.user_memory.get_team_rules()
-        ticket_context = self._build_prompt_ticket_context(request.ticket_context.compact_dict())
+        normalized_context = TicketContextBuilder.normalize(request.ticket_context)
+        current_field_values = TicketContextBuilder.current_field_values(request.ticket_context)
+        ticket_state = self.ticket_ai_state_store.get(request.ticket_number or request.ticket_context.number)
         prompt = PromptEngine.build_revise_field_query(
             ticket_number=request.ticket_number,
             field_name=request.field_name,
             current_field_value=request.current_field_value,
             revision_instruction=request.revision_instruction,
-            ticket_context=ticket_context,
+            ticket_context=normalized_context,
             current_user=current_user,
             team_rules=team_rules,
+            current_field_values=current_field_values,
+            recent_ai_outputs=ticket_state.generated_fields if ticket_state else {},
         )
 
         if self.createai_provider.is_mock:
@@ -87,13 +121,24 @@ class ServiceNowAssistantService:
                 raw_response = await self.createai_provider.query(
                     system_prompt=REVISE_FIELD_SYSTEM_PROMPT,
                     query=prompt,
+                    session_id=self._build_createai_session_id(request.ticket_number or request.ticket_context.number),
+                    response_schema=REVISE_FIELD_RESPONSE_SCHEMA,
+                    response_schema_name="servicenow_revise_field",
                 )
                 payload = ResponseValidator.parse_revise_response(raw_response)
             except (CreateAIProviderError, AIResponseValidationError) as exc:
                 payload = self._error_revise_payload(request.field_name, str(exc))
 
         response = RevisedFieldResponse.model_validate(payload)
-        return self._apply_revise_safety(request, response)
+        safe_response = self._apply_revise_safety(request, response)
+        self.ticket_ai_state_store.record_revision(
+            ticket_number=request.ticket_number or request.ticket_context.number,
+            normalized_ticket_context=normalized_context,
+            field_name=request.field_name,
+            revised_value=safe_response.revised_value,
+            response_id=self._extract_response_id(raw_response) if "raw_response" in locals() else None,
+        )
+        return safe_response
 
     def save_field_status(self, request: FieldStatusRequest) -> FieldStatusResponse:
         current_user = self.user_memory.get_current_user()
@@ -119,6 +164,12 @@ class ServiceNowAssistantService:
         )
         after_count = len(self.example_memory.accepted_examples)
         accepted_example_saved = after_count > before_count
+        if request.source == "manual" or request.status in {"accepted", "manual_edit_detected"}:
+            self.ticket_ai_state_store.record_user_edit(
+                ticket_number=request.ticket_number,
+                field_name=request.field_name,
+                value=request.final_value,
+            )
 
         if self.repository:
             try:
@@ -328,6 +379,25 @@ class ServiceNowAssistantService:
     def _normalize_for_similarity(self, value: str) -> str:
         return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
+    @staticmethod
+    def _extract_response_id(raw_response: Any) -> str | None:
+        if not isinstance(raw_response, dict):
+            return None
+        metadata = raw_response.get("response")
+        if isinstance(metadata, dict):
+            metadata = metadata.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("query_id"):
+            return str(metadata["query_id"])
+        value = raw_response.get("query_id") or raw_response.get("id") or raw_response.get("response_id")
+        return str(value) if value else None
+
+    @staticmethod
+    def _build_createai_session_id(ticket_number: str | None) -> str | None:
+        if not ticket_number:
+            return None
+        cleaned = re.sub(r"[^A-Za-z0-9_.:-]+", "-", ticket_number.strip())
+        return f"servicenow:{cleaned}" if cleaned else None
+
     async def _regenerate_description_with_ai(
         self,
         request: GenerateFieldsRequest,
@@ -337,9 +407,11 @@ class ServiceNowAssistantService:
         if self.createai_provider.is_mock:
             return ""
 
-        ticket_context = self._build_prompt_ticket_context(request.ticket_context.compact_dict())
+        normalized_context = TicketContextBuilder.normalize(request.ticket_context)
+        current_field_values = TicketContextBuilder.current_field_values(request.ticket_context)
+        ticket_state = self.ticket_ai_state_store.get(request.ticket_context.number)
         prompt = PromptEngine.build_generate_fields_query(
-            ticket_context=ticket_context,
+            ticket_context=normalized_context,
             target_fields=["description"],
             user_instruction=(
                 "Regenerate only the description field. Do not copy More information verbatim. "
@@ -348,12 +420,17 @@ class ServiceNowAssistantService:
             ),
             current_user=current_user,
             team_rules=team_rules,
+            current_field_values=current_field_values,
+            recent_ai_outputs=ticket_state.generated_fields if ticket_state else {},
         )
 
         try:
             raw_response = await self.createai_provider.query(
                 system_prompt=GENERATE_FIELDS_SYSTEM_PROMPT,
                 query=prompt,
+                session_id=self._build_createai_session_id(request.ticket_context.number),
+                response_schema=GENERATE_FIELDS_RESPONSE_SCHEMA,
+                response_schema_name="servicenow_generate_fields",
             )
             payload = ResponseValidator.parse_generate_response(raw_response)
         except (CreateAIProviderError, AIResponseValidationError):

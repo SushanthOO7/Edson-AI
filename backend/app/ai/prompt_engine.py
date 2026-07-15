@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from app.domains.servicenow.prompts import FIELD_PROMPTS
 from app.memory.user_memory import UserProfile
 
 
@@ -13,18 +14,24 @@ class PromptEngine:
         user_instruction: str,
         current_user: UserProfile,
         team_rules: list[str],
+        current_field_values: dict[str, str] | None = None,
+        recent_ai_outputs: dict[str, str] | None = None,
         similar_examples: list[dict[str, Any]] | None = None,
     ) -> str:
+        fields = target_fields or [
+            "short_description",
+            "description",
+            "additional_comments",
+            "work_notes",
+        ]
         payload = {
-            "task": "generate_servicenow_fields",
-            "target_fields": target_fields or [
-                "short_description",
-                "description",
-                "additional_comments",
-                "work_notes",
-            ],
+            "task": "generate_single_field" if target_fields and len(target_fields) == 1 else "generate_all_fields",
+            "target_fields": fields,
             "ticket_context": ticket_context,
+            "current_field_values": current_field_values or {},
+            "recent_ai_outputs": recent_ai_outputs or {},
             "user_instruction": user_instruction,
+            "field_rules": {field: FIELD_PROMPTS[field] for field in fields if field in FIELD_PROMPTS},
             "current_user": {
                 "name": current_user.name,
                 "role": current_user.role,
@@ -46,14 +53,19 @@ class PromptEngine:
         ticket_context: dict[str, Any],
         current_user: UserProfile,
         team_rules: list[str],
+        current_field_values: dict[str, str] | None = None,
+        recent_ai_outputs: dict[str, str] | None = None,
     ) -> str:
         payload = {
-            "task": "revise_one_servicenow_field",
+            "task": "revise_single_field",
             "ticket_number": ticket_number,
             "field_name": field_name,
-            "current_field_value": current_field_value,
-            "revision_instruction": revision_instruction,
+            "current_value": current_field_value,
+            "user_instruction": revision_instruction,
             "ticket_context": ticket_context,
+            "current_field_values": current_field_values or {},
+            "recent_ai_outputs": recent_ai_outputs or {},
+            "field_rules": {field_name: FIELD_PROMPTS[field_name]} if field_name in FIELD_PROMPTS else {},
             "current_user": {
                 "name": current_user.name,
                 "role": current_user.role,

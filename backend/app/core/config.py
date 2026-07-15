@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     createai_temperature: float = 0.1
     createai_top_p: float = 0.01
     createai_timeout_seconds: float = 30.0
+    createai_enable_history: bool = True
 
     database_url: str | None = None
 

@@ -2,6 +2,14 @@ import type { GeneratedFieldsResponse, SupportedFieldName, TicketContext } from 
 
 type FieldElement = HTMLInputElement | HTMLTextAreaElement | HTMLElement;
 
+interface ActivityEntry {
+  type: string;
+  author: string;
+  timestamp: string;
+  text: string;
+  display_order: number;
+}
+
 const FIELD_SELECTORS: Record<SupportedFieldName, string[]> = {
   short_description: [
     'input[name="short_description"]',
@@ -215,6 +223,15 @@ export function readTicketContext(): TicketContext {
 }
 
 function readRecentActivitySummary(): string {
+  const structuredEntries = readStructuredRecentActivity();
+  if (structuredEntries.length > 0) {
+    return JSON.stringify({
+      format: "servicenow_activity_v1",
+      order: "visible_newest_first",
+      entries: structuredEntries
+    });
+  }
+
   const selectors = [
     "#activity-stream",
     ".activity-stream",
@@ -230,6 +247,157 @@ function readRecentActivitySummary(): string {
     }
   }
   return "";
+}
+
+function readStructuredRecentActivity(): ActivityEntry[] {
+  const stream = findActivityStreamElement();
+  if (!stream) {
+    return [];
+  }
+
+  const candidates = findActivityEntryElements(stream);
+  const entries = candidates
+    .map((element, index) => parseActivityEntry(element, index))
+    .filter((entry): entry is ActivityEntry => Boolean(entry));
+
+  return dedupeActivityEntries(entries).slice(0, 12);
+}
+
+function findActivityStreamElement(): HTMLElement | null {
+  const selectors = [
+    "#activity-stream",
+    ".activity-stream",
+    "[id*='activity'][id*='stream' i]",
+    "[aria-label*='Activities' i]",
+    "[aria-label*='Activity' i]"
+  ];
+  for (const selector of selectors) {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element?.innerText?.trim()) {
+      return element;
+    }
+  }
+  return null;
+}
+
+function findActivityEntryElements(stream: HTMLElement): HTMLElement[] {
+  const selectors = [
+    "[class*='activity-stream-entry' i]",
+    "[class*='activity-stream-card' i]",
+    "[class*='activity-card' i]",
+    "[class*='sn-card' i]",
+    "[role='article']",
+    "li"
+  ];
+  const bySelector = selectors.flatMap((selector) => Array.from(stream.querySelectorAll<HTMLElement>(selector)));
+  const unique = Array.from(new Set(bySelector));
+  const useful = unique.filter((element) => isLikelyActivityEntry(element));
+  if (useful.length > 0) {
+    return useful;
+  }
+  return Array.from(stream.children).filter((element): element is HTMLElement => {
+    return element instanceof HTMLElement && isLikelyActivityEntry(element);
+  });
+}
+
+function isLikelyActivityEntry(element: HTMLElement): boolean {
+  const text = normalizeWhitespace(element.innerText || element.textContent || "");
+  if (text.length < 20 || text.length > 5000) {
+    return false;
+  }
+  return /(additional comments|work notes|email sent|comments added|incident|task|20\d{2}-\d{2}-\d{2})/i.test(text);
+}
+
+function parseActivityEntry(element: HTMLElement, displayOrder: number): ActivityEntry | null {
+  const rawText = normalizeWhitespace(element.innerText || element.textContent || "");
+  if (!rawText) {
+    return null;
+  }
+
+  const type = inferActivityEntryType(rawText);
+  const timestamp = rawText.match(/\b20\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\b/)?.[0] ?? "";
+  const author = inferActivityAuthor(rawText);
+  const text = cleanActivityBody(rawText, type, author);
+
+  if (!text || (type === "email_sent" && text.length < 40)) {
+    return null;
+  }
+
+  return {
+    type,
+    author,
+    timestamp,
+    text: text.slice(0, 1200),
+    display_order: displayOrder
+  };
+}
+
+function inferActivityEntryType(text: string): string {
+  if (/work notes/i.test(text)) {
+    return "work_notes";
+  }
+  if (/additional comments|comments added/i.test(text)) {
+    return "additional_comments";
+  }
+  if (/email sent/i.test(text)) {
+    return "email_sent";
+  }
+  return "activity";
+}
+
+function inferActivityAuthor(text: string): string {
+  const withoutInitials = text.replace(/^[A-Z]{1,3}\s+/, "");
+  const beforeType = withoutInitials.split(/\b(?:Additional comments|Work notes|Email sent)\b/i)[0]?.trim();
+  if (beforeType && beforeType.length <= 80 && !/^system$/i.test(beforeType)) {
+    return beforeType;
+  }
+  if (/^system\b/i.test(withoutInitials)) {
+    return "System";
+  }
+  return "";
+}
+
+function cleanActivityBody(text: string, type: string, author: string): string {
+  let cleaned = text
+    .replace(/\b(?:Additional comments|Work notes|Email sent)\s*[\u2022-]?\s*20\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/gi, " ")
+    .replace(/\bShow email details\b/gi, " ")
+    .replace(/\bSubject:\s*.*?(?=\bFrom:\b|\bTo:\b|$)/i, " ")
+    .replace(/\bFrom:\s*\S+/gi, " ")
+    .replace(/\bTo:\s*\S+/gi, " ")
+    .replace(/^[A-Z]{1,3}\s+/, " ")
+    .replace(/^System\s+/i, " ");
+
+  if (author) {
+    cleaned = cleaned.replace(new RegExp(`^${escapeRegExp(author)}\\s+`, "i"), " ");
+  }
+
+  if (type === "email_sent") {
+    cleaned = cleaned.replace(/\bEmail sent\b/gi, " ");
+  }
+
+  return normalizeWhitespace(cleaned);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function dedupeActivityEntries(entries: ActivityEntry[]): ActivityEntry[] {
+  const seen = new Set<string>();
+  const deduped: ActivityEntry[] = [];
+  for (const entry of entries) {
+    const key = `${entry.type}|${entry.timestamp}|${entry.text.slice(0, 160)}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(entry);
+  }
+  return deduped;
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 export function ensureInlineMount(fieldName: SupportedFieldName): HTMLElement | null {

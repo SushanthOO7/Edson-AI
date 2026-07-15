@@ -48,7 +48,12 @@ async def generate_fields(
     background_tasks: BackgroundTasks,
     service: ServiceNowAssistantService = Depends(get_servicenow_service),
 ) -> GeneratedFieldsResponse:
-    all_fields_request = request.model_copy(update={"target_fields": None, "user_instruction": "Generate all fields."})
+    all_fields_request = request.model_copy(
+        update={
+            "target_fields": None,
+            "user_instruction": request.user_instruction.strip() or "Generate all fields.",
+        }
+    )
     response = await service.generate_fields(all_fields_request)
     background_tasks.add_task(service.record_generation, all_fields_request, response)
     return response
@@ -96,15 +101,26 @@ async def generate_one_field(
     background_tasks: BackgroundTasks,
     service: ServiceNowAssistantService,
 ) -> GeneratedFieldsResponse:
+    user_instruction = merge_field_instruction(
+        base_instruction=FIELD_GENERATION_INSTRUCTIONS[field_name],
+        request_instruction=request.user_instruction,
+    )
     field_request = request.model_copy(
         update={
             "target_fields": [field_name],
-            "user_instruction": FIELD_GENERATION_INSTRUCTIONS[field_name],
+            "user_instruction": user_instruction,
         }
     )
     response = await service.generate_fields(field_request)
     background_tasks.add_task(service.record_generation, field_request, response)
     return response
+
+
+def merge_field_instruction(*, base_instruction: str, request_instruction: str) -> str:
+    cleaned = request_instruction.strip()
+    if not cleaned or cleaned == "Generate all fields." or cleaned == base_instruction:
+        return base_instruction
+    return f"{base_instruction}\n\nUser guidance: {cleaned}"
 
 
 @router.post("/revise-field", response_model=RevisedFieldResponse)

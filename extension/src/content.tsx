@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   AlertCircle,
   Check,
+  Eraser,
   FilePlus2,
   Loader2,
   MessageCirclePlus,
@@ -51,6 +52,7 @@ function AssistantPanel() {
   const [error, setError] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [lastContext, setLastContext] = useState<TicketContext | null>(null);
+  const [nextResponseContext, setNextResponseContext] = useState("");
   const [position, setPosition] = useState<PanelPosition>(() => getInitialPanelPosition());
   const dragState = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const [statuses, setStatuses] = useState<Record<SupportedFieldName, FieldStatus>>({
@@ -112,10 +114,16 @@ function AssistantPanel() {
     try {
       const ticketContext = readTicketContext();
       const previousValues = readCurrentFieldValues(targetFields);
+      const userInstruction = buildGenerationInstruction(targetFields, nextResponseContext);
       const response =
-        targetFields.length === 1 ? await generateField(ticketContext, targetFields[0]) : await generateFields(ticketContext);
+        targetFields.length === 1
+          ? await generateField(ticketContext, targetFields[0], userInstruction)
+          : await generateFields(ticketContext, userInstruction);
       const fillResults = fillFieldsFromResponse(response, targetFields);
       setLastContext(ticketContext);
+      if (nextResponseContext.trim() && userInstruction) {
+        setNextResponseContext("");
+      }
 
       setStatuses((current) => {
         const nextStatuses = { ...current };
@@ -155,21 +163,21 @@ function AssistantPanel() {
     },
     {
       id: "generate",
-      label: "Generate",
+      label: "Generate All",
       tone: "primary",
       icon: Wand2,
       fields: SUPPORTED_FIELDS
     },
     {
       id: "additional_comments",
-      label: "Fill Additional Comments",
+      label: "Draft Reply",
       tone: "mint",
       icon: MessageCirclePlus,
       fields: ["additional_comments"]
     },
     {
       id: "work_notes",
-      label: "Fill Work Notes",
+      label: "Draft Work Note",
       tone: "orange",
       icon: NotebookPen,
       fields: ["work_notes"]
@@ -239,6 +247,30 @@ function AssistantPanel() {
           ))}
         </div>
 
+        <div className="edson-ai-guidance-panel">
+          <div className="edson-ai-guidance-header">
+            <span>Next reply guidance</span>
+            <button
+              type="button"
+              className="edson-ai-guidance-clear"
+              onClick={() => setNextResponseContext("")}
+              disabled={!nextResponseContext.trim() || Boolean(activeAction)}
+              title="Clear guidance"
+              aria-label="Clear guidance"
+            >
+              <Eraser className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <textarea
+            className="edson-ai-guidance-input"
+            value={nextResponseContext}
+            onChange={(event) => setNextResponseContext(event.target.value)}
+            placeholder="Example: approve keeping the charger until Aug 4 and ask for an email when back onsite"
+            aria-label="Guidance for additional comments or work notes"
+            disabled={Boolean(activeAction)}
+          />
+        </div>
+
         {error ? (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
@@ -254,6 +286,22 @@ function AssistantPanel() {
       </div>
     </section>
   );
+}
+
+function buildGenerationInstruction(fields: SupportedFieldName[], nextResponseContext: string): string | undefined {
+  const context = nextResponseContext.trim();
+  if (!context) {
+    return undefined;
+  }
+  const targetsConversationField = fields.includes("additional_comments") || fields.includes("work_notes");
+  if (!targetsConversationField) {
+    return undefined;
+  }
+  const targetText =
+    fields.length === 1
+      ? ""
+      : "Generate all fields. Apply the following user guidance only to additional_comments and work_notes.";
+  return [targetText, `User guidance for the next response/note: ${context}`].filter(Boolean).join("\n\n");
 }
 
 function getInitialPanelPosition(): PanelPosition {
@@ -482,7 +530,7 @@ function InlineFieldControl(props: {
           className="edson-ai-input flex min-w-[180px] flex-1"
           value={moreContext}
           onChange={(event) => setMoreContext(event.target.value)}
-          placeholder="More context"
+          placeholder="Revision guidance"
         />
         <button
           type="button"
